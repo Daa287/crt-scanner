@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CRT · TBS · Scanner v1.04</title>
+<title>CRT · TBS · Scanner v1.05</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-height:100vh}
@@ -120,6 +120,28 @@ body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-heig
 .konf-bull{background:rgba(0,230,118,.1);border-color:rgba(0,230,118,.4);color:#00e676}
 .konf-bear{background:rgba(255,23,68,.1);border-color:rgba(255,23,68,.4);color:#ff1744}
 .konf-warn{background:rgba(255,171,0,.08);border-color:rgba(255,171,0,.3);color:#ffab00}
+
+/* ── TRADING AMPEL ── */
+.ampel-wrap{grid-column:1/-1;border:1px solid #1c1c38;background:#0a0a18;overflow:hidden}
+.ampel-kopf{padding:7px 12px;font-size:7px;letter-spacing:4px;color:#445060;border-bottom:1px solid #1c1c38}
+.ampel-body{padding:10px 12px;display:flex;align-items:center;gap:12px}
+.ampel-lichter{display:flex;flex-direction:column;gap:5px;flex-shrink:0}
+.ampel-licht{width:20px;height:20px;border-radius:50%;opacity:.2;transition:all .3s}
+.ampel-licht.an{opacity:1;box-shadow:0 0 12px 3px currentColor}
+.licht-gruen{background:#00e676;color:#00e676}
+.licht-gelb{background:#ffab00;color:#ffab00}
+.licht-rot{background:#ff1744;color:#ff1744}
+.ampel-info{flex:1}
+.ampel-status{font-size:16px;font-weight:bold;letter-spacing:2px;margin-bottom:4px}
+.ampel-status.gruen{color:#00e676}
+.ampel-status.gelb{color:#ffab00}
+.ampel-status.rot{color:#ff1744}
+.ampel-text{font-size:9px;color:#6b7a90;line-height:1.5}
+.ampel-checkliste{margin-top:6px;display:flex;flex-direction:column;gap:2px}
+.check-zeile{font-size:8px;display:flex;align-items:center;gap:5px}
+.check-ok{color:#00e676}
+.check-nein{color:#ff1744}
+.check-neutral{color:#445060}
 .journal-btn{width:100%;margin-top:6px;background:rgba(124,58,237,.08);border:1px solid rgba(124,58,237,.3);color:#a78bfa;font-family:monospace;font-size:8px;padding:5px;cursor:pointer;letter-spacing:1px}
 
 /* JOURNAL */
@@ -186,7 +208,7 @@ body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-heig
 
 <div class="header">
   <div class="logo">CRT · TBS · KI SCANNER</div>
-  <div class="version">VERSION 1.04 · QUALITÄT NUR AUF GESCHLOSSENEN KERZEN · GERÄTE-KONSISTENT</div>
+  <div class="version">VERSION 1.05 · TRADING-AMPEL · WANN TRADEN?</div>
   <div class="controls">
     <div class="live"><div class="dot"></div><span id="letzteAkt">–</span></div>
     <button class="btn" onclick="alleAkt()">↻ Aktualisieren</button>
@@ -268,7 +290,7 @@ body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-heig
   <div id="statsInhalt"></div>
 </div>
 
-<div class="footer">BINANCE API · v1.04 · QUALITÄT NUR GESCHL. KERZEN · GLEICH AUF ALLEN GERÄTEN · AUTO-AKT. BEI KERZEN-CLOSE</div>
+<div class="footer">BINANCE API · v1.05 · TRADING-AMPEL · GRÜN=TRADEN · GELB=WARTEN · ROT=FINGER WEG</div>
 
 <script>
 const ASSETS=[
@@ -683,11 +705,120 @@ function manuelInsJournal(sym,ri,tf,mo,preis,sl,z1,z2,qual){
   speichereTrades(trades);alert(sym+' '+ri+' ins Journal eingetragen!');
 }
 
-function konfBanner(ri4,ri1){
-  if(ri4==='NEUTRAL'&&ri1==='NEUTRAL')return'';
-  if(ri4===ri1&&ri4!=='NEUTRAL')return`<div class="konf-banner ${ri4==='LONG'?'konf-bull':'konf-bear'}">✅ H4+H1 BESTÄTIGUNG: ${ri4==='LONG'?'↑ LONG':'↓ SHORT'} – HOHES VERTRAUEN</div>`;
-  if(ri4!=='NEUTRAL'&&ri1!=='NEUTRAL'&&ri4!==ri1)return`<div class="konf-banner konf-warn">⚠️ H4: ${ri4} · H1: ${ri1} – WIDERSPRUCH · ABWARTEN</div>`;
-  return'';
+function ampelBanner(ri4, ki4, crt4, ri1, ki1, crt1){
+  // Bedingungen auswerten
+  const gleicheRichtung = ri4 !== 'NEUTRAL' && ri1 !== 'NEUTRAL' && ri4 === ri1;
+  const h4Qual          = ki4 ? ki4.qualitaet >= 7 : false;
+  const h1Qual          = ki1 ? ki1.qualitaet >= 7 : false;
+  const h4Tbs           = crt4 ? crt4.tbs : false;
+  const h1Tbs           = crt1 ? crt1.tbs : false;
+  const beideQual       = h4Qual && h1Qual;
+  const beideTbs        = h4Tbs && h1Tbs;
+  const richtung        = gleicheRichtung ? ri4 : '–';
+
+  // ── GRÜN: Ideales Setup ──────────────────────────────────────────────────
+  if(gleicheRichtung && beideQual && beideTbs){
+    const pf = richtung==='LONG'?'#00e676':'#ff1744';
+    const icon = richtung==='LONG'?'↑':'↓';
+    return`<div class="ampel-wrap">
+      <div class="ampel-kopf">🚦 TRADING-AMPEL</div>
+      <div class="ampel-body">
+        <div class="ampel-lichter">
+          <div class="ampel-licht licht-gruen an"></div>
+          <div class="ampel-licht licht-gelb"></div>
+          <div class="ampel-licht licht-rot"></div>
+        </div>
+        <div class="ampel-info">
+          <div class="ampel-status gruen">✅ JETZT TRADEN</div>
+          <div class="ampel-text">H4 + H1 bestätigen <strong style="color:${pf}">${icon} ${richtung}</strong> · Alle Bedingungen erfüllt</div>
+          <div class="ampel-checkliste">
+            <div class="check-zeile"><span class="check-ok">✓</span> Gleiche Richtung (H4+H1: ${richtung})</div>
+            <div class="check-zeile"><span class="check-ok">✓</span> H4 Qualität ≥7/10 (${ki4.qualitaet}/10)</div>
+            <div class="check-zeile"><span class="check-ok">✓</span> H1 Qualität ≥7/10 (${ki1.qualitaet}/10)</div>
+            <div class="check-zeile"><span class="check-ok">✓</span> H4 TBS bestätigt (${crt4.tbsKerze})</div>
+            <div class="check-zeile"><span class="check-ok">✓</span> H1 TBS bestätigt (${crt1.tbsKerze})</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── GELB: Teilweise erfüllt ──────────────────────────────────────────────
+  if(gleicheRichtung && (h4Qual || h1Qual)){
+    const pf = richtung==='LONG'?'#00e676':'#ff1744';
+    const icon = richtung==='LONG'?'↑':'↓';
+    const fehlt = [];
+    if(!h4Qual) fehlt.push('H4 Qualität zu niedrig ('+( ki4?ki4.qualitaet:0)+'/10)');
+    if(!h1Qual) fehlt.push('H1 Qualität zu niedrig ('+(ki1?ki1.qualitaet:0)+'/10)');
+    if(!h4Tbs)  fehlt.push('H4 TBS fehlt noch');
+    if(!h1Tbs)  fehlt.push('H1 TBS fehlt noch');
+    return`<div class="ampel-wrap">
+      <div class="ampel-kopf">🚦 TRADING-AMPEL</div>
+      <div class="ampel-body">
+        <div class="ampel-lichter">
+          <div class="ampel-licht licht-gruen"></div>
+          <div class="ampel-licht licht-gelb an"></div>
+          <div class="ampel-licht licht-rot"></div>
+        </div>
+        <div class="ampel-info">
+          <div class="ampel-status gelb">⏳ ABWARTEN</div>
+          <div class="ampel-text">Tendenz <strong style="color:${pf}">${icon} ${richtung}</strong> · Noch nicht alle Bedingungen erfüllt</div>
+          <div class="ampel-checkliste">
+            <div class="check-zeile"><span class="check-ok">✓</span> Gleiche Richtung (${richtung})</div>
+            <div class="check-zeile ${h4Qual?'check-ok':'check-nein'}">${h4Qual?'✓':'✗'} H4 Qualität: ${ki4?ki4.qualitaet:0}/10 ${h4Qual?'':'(min. 7 nötig)'}</div>
+            <div class="check-zeile ${h1Qual?'check-ok':'check-nein'}">${h1Qual?'✓':'✗'} H1 Qualität: ${ki1?ki1.qualitaet:0}/10 ${h1Qual?'':'(min. 7 nötig)'}</div>
+            <div class="check-zeile ${h4Tbs?'check-ok':'check-nein'}">${h4Tbs?'✓':'✗'} H4 TBS: ${h4Tbs?'aktiv ⚡':'fehlt noch'}</div>
+            <div class="check-zeile ${h1Tbs?'check-ok':'check-nein'}">${h1Tbs?'✓':'✗'} H1 TBS: ${h1Tbs?'aktiv ⚡':'fehlt noch'}</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // ── ROT: Widerspruch oder kein Signal ────────────────────────────────────
+  const widerspruch = ri4 !== 'NEUTRAL' && ri1 !== 'NEUTRAL' && ri4 !== ri1;
+  if(widerspruch){
+    return`<div class="ampel-wrap">
+      <div class="ampel-kopf">🚦 TRADING-AMPEL</div>
+      <div class="ampel-body">
+        <div class="ampel-lichter">
+          <div class="ampel-licht licht-gruen"></div>
+          <div class="ampel-licht licht-gelb"></div>
+          <div class="ampel-licht licht-rot an"></div>
+        </div>
+        <div class="ampel-info">
+          <div class="ampel-status rot">🚫 FINGER WEG</div>
+          <div class="ampel-text">H4 und H1 widersprechen sich – kein klares Setup</div>
+          <div class="ampel-checkliste">
+            <div class="check-zeile check-nein">✗ H4 zeigt: ${ri4}</div>
+            <div class="check-zeile check-nein">✗ H1 zeigt: ${ri1}</div>
+            <div class="check-zeile check-neutral">→ Warte bis beide dieselbe Richtung zeigen</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  // Kein Signal
+  return`<div class="ampel-wrap">
+    <div class="ampel-kopf">🚦 TRADING-AMPEL</div>
+    <div class="ampel-body">
+      <div class="ampel-lichter">
+        <div class="ampel-licht licht-gruen"></div>
+        <div class="ampel-licht licht-gelb"></div>
+        <div class="ampel-licht licht-rot an"></div>
+      </div>
+      <div class="ampel-info">
+        <div class="ampel-status rot">🚫 KEIN SETUP</div>
+        <div class="ampel-text">Kein TBS Signal vorhanden – Geduld ist jetzt das Richtige</div>
+        <div class="ampel-checkliste">
+          <div class="check-zeile check-nein">✗ Kein TBS auf H4 oder H1</div>
+          <div class="check-zeile check-nein">✗ Qualität unter 7/10</div>
+          <div class="check-zeile check-neutral">→ Warte auf Kerzen-Close außerhalb CRT-Range</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 async function ladeAsset(asset){
@@ -712,8 +843,12 @@ async function ladeAsset(asset){
   const[r4,r1]=ergebnisse;
   const ri4=r4.ok?r4.analyse.richtung:'NEUTRAL';
   const ri1=r1.ok?r1.analyse.richtung:'NEUTRAL';
+  const ki4=r4.ok?r4.analyse:null;
+  const ki1=r1.ok?r1.analyse:null;
+  const crt4=r4.ok?r4.crt:null;
+  const crt1=r1.ok?r1.crt:null;
   container.innerHTML=`<div class="dual-grid">
-    ${konfBanner(ri4,ri1)}
+    ${ampelBanner(ri4,ki4,crt4,ri1,ki1,crt1)}
     ${karteHtml(asset,'4h','H4',r4.ok?{laden:false,crt:r4.crt,livePreis:r4.livePreis,veraend:r4.veraend,analyse:r4.analyse}:{laden:false,fehler:r4.fehler})}
     ${karteHtml(asset,'1h','H1',r1.ok?{laden:false,crt:r1.crt,livePreis:r1.livePreis,veraend:r1.veraend,analyse:r1.analyse}:{laden:false,fehler:r1.fehler})}
   </div>`;
