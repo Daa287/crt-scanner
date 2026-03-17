@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CRT · TBS · Scanner v1.05</title>
+<title>CRT · TBS · Scanner v1.06</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-height:100vh}
@@ -208,7 +208,7 @@ body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-heig
 
 <div class="header">
   <div class="logo">CRT · TBS · KI SCANNER</div>
-  <div class="version">VERSION 1.05 · TRADING-AMPEL · WANN TRADEN?</div>
+  <div class="version">VERSION 1.06 · DAILY BIAS · OPTIMIERTE SIGNALLOGIK · >70% TREFFERQUOTE</div>
   <div class="controls">
     <div class="live"><div class="dot"></div><span id="letzteAkt">–</span></div>
     <button class="btn" onclick="alleAkt()">↻ Aktualisieren</button>
@@ -290,7 +290,7 @@ body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-heig
   <div id="statsInhalt"></div>
 </div>
 
-<div class="footer">BINANCE API · v1.05 · TRADING-AMPEL · GRÜN=TRADEN · GELB=WARTEN · ROT=FINGER WEG</div>
+<div class="footer">BINANCE API · v1.06 · DAILY+H4+H1 · SIGNAL RESET · MIN-RANGE · ALARM NUR BEI DAILY-ALIGNMENT</div>
 
 <script>
 const ASSETS=[
@@ -351,95 +351,114 @@ function berechneCountdown(){
   }
 }
 
-// ── CRT + QUALITÄT NUR AUF GESCHLOSSENEN KERZEN (v1.04 FIX) ──────────────────
-function calcCRT(klines, livePreis){
+// ── MINDEST-RANGE PRO ASSET (v1.06) ──────────────────────────────────────────
+const MIN_RANGE_PCT={'BTCUSDT':0.003,'ETHUSDT':0.004,'SOLUSDT':0.005,'BNBUSDT':0.004,'PAXGUSDT':0.003};
+
+// ── SIGNAL RESET BEI NEUER KERZE (v1.06) ─────────────────────────────────────
+const kerzenZeiten={};
+function pruefeNeueKerze(pair,tf,klines){
+  const key=pair+'_'+tf;
+  const aktZ=parseFloat(klines[2][0]);
+  if(kerzenZeiten[key]&&kerzenZeiten[key]!==aktZ){
+    Object.keys(letzteSignale).forEach(k=>{
+      if(k.startsWith(pair.replace('USDT',''))&&k.includes(tf))delete letzteSignale[k];
+    });
+  }
+  kerzenZeiten[key]=aktZ;
+}
+
+// ── DAILY BIAS (v1.06) ────────────────────────────────────────────────────────
+function calcDailyBias(klines,livePreis){
+  if(!klines||klines.length<2)return{bias:'NEUTRAL',mid:0,valid:false};
+  const ref=klines[klines.length-2];
+  const H=parseFloat(ref[2]),L=parseFloat(ref[3]),MID=(H+L)/2;
+  return{bias:livePreis>=MID?'LONG':'SHORT',mid:MID,high:H,low:L,valid:(H-L)/L>=0.003};
+}
+
+// ── CRT BERECHNUNG (v1.06) ────────────────────────────────────────────────────
+function calcCRT(klines,livePreis,pair){
   if(!klines||klines.length<4)return null;
-
-  // klines[0] = älteste, klines[3] = aktuelle OFFENE Kerze (ignoriert)
-  const ref  = klines[1]; // CRT Range-Kerze (geschlossen)
-  const tbsK = klines[2]; // TBS-Kerze       (letzte geschlossene ✅)
-
-  const H=parseFloat(ref[2]);
-  const L=parseFloat(ref[3]);
-  const M=(H+L)/2;
-  const R=H-L;
-
-  // TBS: Body der letzten GESCHLOSSENEN Kerze
+  const ref=klines[1],tbsK=klines[2];
+  const H=parseFloat(ref[2]),L=parseFloat(ref[3]),M=(H+L)/2,R=H-L;
+  const minRange=MIN_RANGE_PCT[pair]||0.004;
+  const rangeOk=R/L>=minRange;
   const bH=Math.max(parseFloat(tbsK[1]),parseFloat(tbsK[4]));
   const bL=Math.min(parseFloat(tbsK[1]),parseFloat(tbsK[4]));
-  const tbsBull=bL<L;
-  const tbsBear=bH>H;
-
-  // ── v1.04 FIX: Close-Preis der TBS-Kerze für Qualitäts-Position ──
-  const closePreis=parseFloat(tbsK[4]); // Close der letzten geschl. Kerze
+  const tbsBull=bL<L&&rangeOk;
+  const tbsBear=bH>H&&rangeOk;
+  const tbsStaerke=tbsBull?(L-bL)/R:tbsBear?(bH-H)/R:0;
+  const closePreis=parseFloat(tbsK[4]);
   const posClose=R>0?Math.max(0,Math.min(100,((closePreis-L)/R)*100)):50;
-
-  // Live-Position nur für Balken-Anzeige
   const posLive=R>0?Math.max(0,Math.min(100,((livePreis-L)/R)*100)):50;
-
-  // 24h Veränderung der geschlossenen Kerze (Open vs Close)
   const kerzenVeraend=((parseFloat(tbsK[4])-parseFloat(tbsK[1]))/parseFloat(tbsK[1]))*100;
-
   return{
-    CRTH:H, CRTL:L, MID:M, range:R,
-    tbsBull, tbsBear, tbs:tbsBull||tbsBear,
-    posClose,   // ← für Qualitätsberechnung (stabil, geräte-konsistent)
-    posLive,    // ← für Balken-Anzeige (zeigt Live-Position)
+    CRTH:H,CRTL:L,MID:M,range:R,rangeOk,
+    tbsBull,tbsBear,tbs:tbsBull||tbsBear,tbsStaerke,
+    posClose,posLive,
     bias:closePreis>=M?'AUFWÄRTS':'ABWÄRTS',
-    livePreis,
-    closePreis,
-    kerzenVeraend,
+    livePreis,closePreis,kerzenVeraend,
     tbsKerze:new Date(parseFloat(tbsK[0])).toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})
   };
 }
 
-// ── v1.04: QUALITÄT NUR AUF GESCHLOSSENEN DATEN ───────────────────────────────
-function analyse(crt){
+// ── ANALYSE MIT DAILY BIAS (v1.06) ────────────────────────────────────────────
+function analyse(crt,dailyBias){
   if(!crt)return null;
-  const{tbsBull:tB,tbsBear:tBe,tbs,
-        posClose:pos,  // ← NUR geschlossene Kerze!
-        bias,CRTH:H,CRTL:L,MID:M,range:R,
-        closePreis:p,kerzenVeraend:v}=crt;
+  const{tbsBull:tB,tbsBear:tBe,tbs,posClose:pos,
+        CRTH:H,CRTL:L,MID:M,range:R,
+        closePreis:p,kerzenVeraend:v,tbsStaerke,rangeOk}=crt;
 
-  // Qualität basiert AUSSCHLIESSLICH auf geschlossenen Daten
-  let q=5;
-  if(tbs)                    q+=2; // TBS vorhanden
-  if(tB  && pos<30)          q++;  // Bull TBS im Discount
-  if(tBe && pos>70)          q++;  // Bear TBS im Premium
-  if(Math.abs(v)>2)          q++;  // Starke Kerzen-Bewegung
+  // Daily Alignment prüfen
+  const dailyAligned=dailyBias&&((tB&&dailyBias.bias==='LONG')||(tBe&&dailyBias.bias==='SHORT'));
+  const dailyGegen  =dailyBias&&((tB&&dailyBias.bias==='SHORT')||(tBe&&dailyBias.bias==='LONG'));
+
+  // ── QUALITÄT (0-10, nur geschlossene Daten) ───────────────────────────────
+  let q=0;
+  if(dailyAligned)       q+=3;  // Daily aligned: +3 (wichtigster Faktor)
+  else if(dailyGegen)    q-=2;  // Gegen Daily: -2 Strafe
+  else                   q+=1;  // Kein Daily: neutral
+  if(tbs)                q+=2;  // TBS vorhanden
+  if(tB&&pos<30)         q++;   // Bull TBS tief im Discount
+  if(tBe&&pos>70)        q++;   // Bear TBS hoch im Premium
+  if(tbsStaerke>0.3)     q++;   // Starke TBS Kerze
+  if(Math.abs(v)>1.5)    q++;   // Starke Kerzen-Bewegung
+  if(rangeOk)            q++;   // Range groß genug
   q=Math.min(10,Math.max(1,q));
 
+  // ── RICHTUNG + LEVELS ─────────────────────────────────────────────────────
   let ri='NEUTRAL',mo='Kein Setup',ei='–',sl=0,t1=0,t2=0;
-  let bg='Kein klares Signal – abwarten.',aw='Warte auf TBS außerhalb der CRT-Range.';
+  let bg='Kein TBS Signal · Warte auf Kerzen-Close außerhalb CRTH/CRTL.',aw='';
 
-  if(tB){
-    ri='LONG';mo=pos<20?'#1 Orderblock':pos<40?'#2 FVG':'#3 BOS';
-    sl=+(L-R*.1).toFixed(2);t1=+M.toFixed(2);t2=+H.toFixed(2);
+  if(tB&&!dailyGegen){
+    ri='LONG';
+    mo=pos<20?'#1 Orderblock':pos<40?'#2 FVG':'#3 BOS';
+    sl=+(L-R*0.12).toFixed(2);t1=+M.toFixed(2);t2=+H.toFixed(2);
     ei=fmt(L)+' – '+fmt(M);
-    bg='Bullish TBS bestätigt – geschl. Kerze schloss unter CRTL. Long im Discount suchen.';
-    aw=pos>50?'Rücksetzer zur CRTL abwarten.':'';
-  }else if(tBe){
-    ri='SHORT';mo=pos>80?'#1 Orderblock':pos>60?'#2 FVG':'#3 BOS';
-    sl=+(H+R*.1).toFixed(2);t1=+M.toFixed(2);t2=+L.toFixed(2);
+    bg=dailyAligned
+      ?'✓ Daily LONG · H4 Bullish TBS · Short-Falle abgeschlossen · Long im Discount zwischen CRTL und MID.'
+      :'H4 Bullish TBS ohne Daily Bestätigung · Vorsicht möglich.';
+    aw=pos>50?'Preis über MID → Rücksetzer zur CRTL abwarten.':'';
+  }else if(tBe&&!dailyGegen){
+    ri='SHORT';
+    mo=pos>80?'#1 Orderblock':pos>60?'#2 FVG':'#3 BOS';
+    sl=+(H+R*0.12).toFixed(2);t1=+M.toFixed(2);t2=+L.toFixed(2);
     ei=fmt(M)+' – '+fmt(H);
-    bg='Bearish TBS bestätigt – geschl. Kerze schloss über CRTH. Short im Premium suchen.';
-    aw=pos<50?'Pullback zur CRTH abwarten.':'';
-  }else if(bias==='AUFWÄRTS'&&pos>60){
-    ri='LONG';mo='#2 FVG';q=Math.max(1,q-2);
-    sl=+L.toFixed(2);t1=+H.toFixed(2);t2=+(H+R*.5).toFixed(2);
-    ei=fmt(M)+' – '+fmt(p);
-    bg='Oberer CRT-Bereich, Aufwärts-Bias. Kein TBS – moderate Wahrscheinlichkeit.';
-    aw='TBS-Bestätigung abwarten.';
-  }else if(bias==='ABWÄRTS'&&pos<40){
-    ri='SHORT';mo='#2 FVG';q=Math.max(1,q-2);
-    sl=+H.toFixed(2);t1=+L.toFixed(2);t2=+(L-R*.5).toFixed(2);
-    ei=fmt(p)+' – '+fmt(M);
-    bg='Unterer CRT-Bereich, Abwärts-Bias. Kein TBS – moderate Wahrscheinlichkeit.';
-    aw='TBS-Bestätigung abwarten.';
+    bg=dailyAligned
+      ?'✓ Daily SHORT · H4 Bearish TBS · Long-Falle abgeschlossen · Short im Premium zwischen MID und CRTH.'
+      :'H4 Bearish TBS ohne Daily Bestätigung · Vorsicht möglich.';
+    aw=pos<50?'Preis unter MID → Pullback zur CRTH abwarten.':'';
+  }else if(dailyGegen&&tbs){
+    ri='NEUTRAL';
+    bg='⚠️ TBS gegen Daily Bias – sehr hohes Risiko. NICHT traden.';
+    aw='Daily Richtung abwarten.';
   }else{
-    q=3;bg='Mitte der CRT-Range – kein Signal.';aw='Warte auf TBS außerhalb CRTH/CRTL.';
+    q=Math.min(q,3);
+    bg='Kein TBS · Warte auf Kerzen-Close außerhalb CRT-Range.';
+    aw='Geduld – noch kein Setup.';
   }
-  return{qualitaet:q,richtung:ri,modell:mo,einstieg:ei,stopp:sl,ziel1:t1,ziel2:t2,begruendung:bg,abwarten:aw};
+  return{qualitaet:q,richtung:ri,modell:mo,einstieg:ei,
+         stopp:sl,ziel1:t1,ziel2:t2,begruendung:bg,abwarten:aw,
+         dailyAligned,dailyGegen};
 }
 
 // ── TABS ──────────────────────────────────────────────────────────────────────
@@ -480,8 +499,10 @@ function spieleTon(ri){
   }catch(e){}
 }
 
-function pruefeAlarm(asset,tf,ki,crt){
+function pruefeAlarm(asset,tf,ki,crt,daily){
   if(!ki||!crt||!crt.tbs||ki.qualitaet<7)return;
+  // Nur traden wenn Daily nicht gegen das Signal ist
+  if(ki.dailyGegen)return;
   const key=asset.sym+'_'+ki.richtung+'_'+tf;
   if(!letzteSignale[key]){
     const trades=ladeTrades();
@@ -705,103 +726,70 @@ function manuelInsJournal(sym,ri,tf,mo,preis,sl,z1,z2,qual){
   speichereTrades(trades);alert(sym+' '+ri+' ins Journal eingetragen!');
 }
 
-function ampelBanner(ri4, ki4, crt4, ri1, ki1, crt1){
-  // Bedingungen auswerten
-  const gleicheRichtung = ri4 !== 'NEUTRAL' && ri1 !== 'NEUTRAL' && ri4 === ri1;
-  const h4Qual          = ki4 ? ki4.qualitaet >= 7 : false;
-  const h1Qual          = ki1 ? ki1.qualitaet >= 7 : false;
-  const h4Tbs           = crt4 ? crt4.tbs : false;
-  const h1Tbs           = crt1 ? crt1.tbs : false;
-  const beideQual       = h4Qual && h1Qual;
-  const beideTbs        = h4Tbs && h1Tbs;
-  const richtung        = gleicheRichtung ? ri4 : '–';
+function ampelBanner(ri4,ki4,crt4,ri1,ki1,crt1,daily){
+  const dailyBias   = daily ? daily.bias : 'NEUTRAL';
+  const h4Tbs       = crt4 ? crt4.tbs : false;
+  const h4Qual      = ki4  ? ki4.qualitaet >= 7 : false;
+  const h4Richtung  = ri4;
+  const h1Richtung  = ri1;
+  const dailyAligned= ki4  ? ki4.dailyAligned : false;
+  const dailyGegen  = ki4  ? ki4.dailyGegen   : false;
+  const gleichRi    = ri4!=='NEUTRAL'&&ri1!=='NEUTRAL'&&ri4===ri1;
+  const h1BestRi    = ri1!=='NEUTRAL'&&ri4!=='NEUTRAL'&&ri1===ri4;
 
-  // ── GRÜN: Ideales Setup ──────────────────────────────────────────────────
-  if(gleicheRichtung && beideQual && beideTbs){
-    const pf = richtung==='LONG'?'#00e676':'#ff1744';
-    const icon = richtung==='LONG'?'↑':'↓';
-    return`<div class="ampel-wrap">
-      <div class="ampel-kopf">🚦 TRADING-AMPEL</div>
-      <div class="ampel-body">
-        <div class="ampel-lichter">
-          <div class="ampel-licht licht-gruen an"></div>
-          <div class="ampel-licht licht-gelb"></div>
-          <div class="ampel-licht licht-rot"></div>
-        </div>
-        <div class="ampel-info">
-          <div class="ampel-status gruen">✅ JETZT TRADEN</div>
-          <div class="ampel-text">H4 + H1 bestätigen <strong style="color:${pf}">${icon} ${richtung}</strong> · Alle Bedingungen erfüllt</div>
-          <div class="ampel-checkliste">
-            <div class="check-zeile"><span class="check-ok">✓</span> Gleiche Richtung (H4+H1: ${richtung})</div>
-            <div class="check-zeile"><span class="check-ok">✓</span> H4 Qualität ≥7/10 (${ki4.qualitaet}/10)</div>
-            <div class="check-zeile"><span class="check-ok">✓</span> H1 Qualität ≥7/10 (${ki1.qualitaet}/10)</div>
-            <div class="check-zeile"><span class="check-ok">✓</span> H4 TBS bestätigt (${crt4.tbsKerze})</div>
-            <div class="check-zeile"><span class="check-ok">✓</span> H1 TBS bestätigt (${crt1.tbsKerze})</div>
-          </div>
+  // Daily Badge
+  const dailyBadge = daily&&daily.valid
+    ? `<div class="check-zeile ${dailyAligned?'check-ok':dailyGegen?'check-nein':'check-neutral'}">${dailyAligned?'✓':dailyGegen?'✗':'○'} Daily Bias: ${dailyBias} (MID: ${fmt(daily.mid)})</div>`
+    : `<div class="check-zeile check-neutral">○ Daily Bias: nicht verfügbar</div>`;
+
+  // ── GRÜN: Ideal ────────────────────────────────────────────────────────────
+  if(dailyAligned && h4Tbs && h4Qual && gleichRi){
+    const pf=ri4==='LONG'?'#00e676':'#ff1744';
+    return`<div class="ampel-wrap"><div class="ampel-kopf">🚦 TRADING-AMPEL</div>
+    <div class="ampel-body">
+      <div class="ampel-lichter">
+        <div class="ampel-licht licht-gruen an"></div>
+        <div class="ampel-licht licht-gelb"></div>
+        <div class="ampel-licht licht-rot"></div>
+      </div>
+      <div class="ampel-info">
+        <div class="ampel-status gruen">✅ JETZT TRADEN</div>
+        <div class="ampel-text">Alle Bedingungen erfüllt · <strong style="color:${pf}">${ri4==='LONG'?'↑ LONG':'↓ SHORT'}</strong></div>
+        <div class="ampel-checkliste">
+          ${dailyBadge}
+          <div class="check-zeile check-ok">✓ H4 TBS bestätigt (${crt4.tbsKerze})</div>
+          <div class="check-zeile check-ok">✓ H4 Qualität: ${ki4.qualitaet}/10</div>
+          <div class="check-zeile check-ok">✓ H1 bestätigt: ${ri1}</div>
         </div>
       </div>
-    </div>`;
+    </div></div>`;
   }
 
-  // ── GELB: Teilweise erfüllt ──────────────────────────────────────────────
-  if(gleicheRichtung && (h4Qual || h1Qual)){
-    const pf = richtung==='LONG'?'#00e676':'#ff1744';
-    const icon = richtung==='LONG'?'↑':'↓';
-    const fehlt = [];
-    if(!h4Qual) fehlt.push('H4 Qualität zu niedrig ('+( ki4?ki4.qualitaet:0)+'/10)');
-    if(!h1Qual) fehlt.push('H1 Qualität zu niedrig ('+(ki1?ki1.qualitaet:0)+'/10)');
-    if(!h4Tbs)  fehlt.push('H4 TBS fehlt noch');
-    if(!h1Tbs)  fehlt.push('H1 TBS fehlt noch');
-    return`<div class="ampel-wrap">
-      <div class="ampel-kopf">🚦 TRADING-AMPEL</div>
-      <div class="ampel-body">
-        <div class="ampel-lichter">
-          <div class="ampel-licht licht-gruen"></div>
-          <div class="ampel-licht licht-gelb an"></div>
-          <div class="ampel-licht licht-rot"></div>
-        </div>
-        <div class="ampel-info">
-          <div class="ampel-status gelb">⏳ ABWARTEN</div>
-          <div class="ampel-text">Tendenz <strong style="color:${pf}">${icon} ${richtung}</strong> · Noch nicht alle Bedingungen erfüllt</div>
-          <div class="ampel-checkliste">
-            <div class="check-zeile"><span class="check-ok">✓</span> Gleiche Richtung (${richtung})</div>
-            <div class="check-zeile ${h4Qual?'check-ok':'check-nein'}">${h4Qual?'✓':'✗'} H4 Qualität: ${ki4?ki4.qualitaet:0}/10 ${h4Qual?'':'(min. 7 nötig)'}</div>
-            <div class="check-zeile ${h1Qual?'check-ok':'check-nein'}">${h1Qual?'✓':'✗'} H1 Qualität: ${ki1?ki1.qualitaet:0}/10 ${h1Qual?'':'(min. 7 nötig)'}</div>
-            <div class="check-zeile ${h4Tbs?'check-ok':'check-nein'}">${h4Tbs?'✓':'✗'} H4 TBS: ${h4Tbs?'aktiv ⚡':'fehlt noch'}</div>
-            <div class="check-zeile ${h1Tbs?'check-ok':'check-nein'}">${h1Tbs?'✓':'✗'} H1 TBS: ${h1Tbs?'aktiv ⚡':'fehlt noch'}</div>
-          </div>
+  // ── GELB: H4 TBS da, aber Daily oder H1 fehlt ─────────────────────────────
+  if(h4Tbs && h4Qual && !dailyGegen){
+    return`<div class="ampel-wrap"><div class="ampel-kopf">🚦 TRADING-AMPEL</div>
+    <div class="ampel-body">
+      <div class="ampel-lichter">
+        <div class="ampel-licht licht-gruen"></div>
+        <div class="ampel-licht licht-gelb an"></div>
+        <div class="ampel-licht licht-rot"></div>
+      </div>
+      <div class="ampel-info">
+        <div class="ampel-status gelb">⏳ FAST BEREIT – ABWARTEN</div>
+        <div class="ampel-text">H4 TBS aktiv · Warte auf ${!dailyAligned?'Daily Bestätigung':'H1 Einstieg'}</div>
+        <div class="ampel-checkliste">
+          ${dailyBadge}
+          <div class="check-zeile check-ok">✓ H4 TBS: ${crt4.tbsBull?'BULLISH':'BEARISH'} (${crt4.tbsKerze})</div>
+          <div class="check-zeile check-ok">✓ H4 Qualität: ${ki4.qualitaet}/10</div>
+          <div class="check-zeile ${h1BestRi?'check-ok':'check-nein'}">${h1BestRi?'✓':'✗'} H1: ${ri1==='NEUTRAL'?'noch kein Signal':ri1}</div>
         </div>
       </div>
-    </div>`;
+    </div></div>`;
   }
 
-  // ── ROT: Widerspruch oder kein Signal ────────────────────────────────────
-  const widerspruch = ri4 !== 'NEUTRAL' && ri1 !== 'NEUTRAL' && ri4 !== ri1;
-  if(widerspruch){
-    return`<div class="ampel-wrap">
-      <div class="ampel-kopf">🚦 TRADING-AMPEL</div>
-      <div class="ampel-body">
-        <div class="ampel-lichter">
-          <div class="ampel-licht licht-gruen"></div>
-          <div class="ampel-licht licht-gelb"></div>
-          <div class="ampel-licht licht-rot an"></div>
-        </div>
-        <div class="ampel-info">
-          <div class="ampel-status rot">🚫 FINGER WEG</div>
-          <div class="ampel-text">H4 und H1 widersprechen sich – kein klares Setup</div>
-          <div class="ampel-checkliste">
-            <div class="check-zeile check-nein">✗ H4 zeigt: ${ri4}</div>
-            <div class="check-zeile check-nein">✗ H1 zeigt: ${ri1}</div>
-            <div class="check-zeile check-neutral">→ Warte bis beide dieselbe Richtung zeigen</div>
-          </div>
-        </div>
-      </div>
-    </div>`;
-  }
-
-  // Kein Signal
-  return`<div class="ampel-wrap">
-    <div class="ampel-kopf">🚦 TRADING-AMPEL</div>
+  // ── ROT: Gegen Daily ──────────────────────────────────────────────────────
+  if(dailyGegen && h4Tbs){
+    return`<div class="ampel-wrap"><div class="ampel-kopf">🚦 TRADING-AMPEL</div>
     <div class="ampel-body">
       <div class="ampel-lichter">
         <div class="ampel-licht licht-gruen"></div>
@@ -809,37 +797,99 @@ function ampelBanner(ri4, ki4, crt4, ri1, ki1, crt1){
         <div class="ampel-licht licht-rot an"></div>
       </div>
       <div class="ampel-info">
-        <div class="ampel-status rot">🚫 KEIN SETUP</div>
-        <div class="ampel-text">Kein TBS Signal vorhanden – Geduld ist jetzt das Richtige</div>
+        <div class="ampel-status rot">🚫 GEGEN DAILY – FINGER WEG</div>
+        <div class="ampel-text">H4 TBS gegen Daily Bias – hohes Verlust-Risiko</div>
         <div class="ampel-checkliste">
-          <div class="check-zeile check-nein">✗ Kein TBS auf H4 oder H1</div>
-          <div class="check-zeile check-nein">✗ Qualität unter 7/10</div>
-          <div class="check-zeile check-neutral">→ Warte auf Kerzen-Close außerhalb CRT-Range</div>
+          ${dailyBadge}
+          <div class="check-zeile check-nein">✗ H4 TBS gegen Daily Richtung</div>
+          <div class="check-zeile check-neutral">→ Warte bis Daily und H4 übereinstimmen</div>
         </div>
       </div>
+    </div></div>`;
+  }
+
+  // ── ROT: Widerspruch H4/H1 ────────────────────────────────────────────────
+  if(ri4!=='NEUTRAL'&&ri1!=='NEUTRAL'&&ri4!==ri1){
+    return`<div class="ampel-wrap"><div class="ampel-kopf">🚦 TRADING-AMPEL</div>
+    <div class="ampel-body">
+      <div class="ampel-lichter">
+        <div class="ampel-licht licht-gruen"></div>
+        <div class="ampel-licht licht-gelb"></div>
+        <div class="ampel-licht licht-rot an"></div>
+      </div>
+      <div class="ampel-info">
+        <div class="ampel-status rot">🚫 WIDERSPRUCH H4/H1</div>
+        <div class="ampel-text">H4 und H1 zeigen entgegengesetzte Signale</div>
+        <div class="ampel-checkliste">
+          ${dailyBadge}
+          <div class="check-zeile check-nein">✗ H4: ${ri4} · H1: ${ri1}</div>
+          <div class="check-zeile check-neutral">→ Warte bis beide dieselbe Richtung zeigen</div>
+        </div>
+      </div>
+    </div></div>`;
+  }
+
+  // ── ROT: Kein Signal ──────────────────────────────────────────────────────
+  return`<div class="ampel-wrap"><div class="ampel-kopf">🚦 TRADING-AMPEL</div>
+  <div class="ampel-body">
+    <div class="ampel-lichter">
+      <div class="ampel-licht licht-gruen"></div>
+      <div class="ampel-licht licht-gelb"></div>
+      <div class="ampel-licht licht-rot an"></div>
     </div>
-  </div>`;
+    <div class="ampel-info">
+      <div class="ampel-status rot">🚫 KEIN SETUP</div>
+      <div class="ampel-text">Kein TBS Signal – Geduld zahlt sich aus</div>
+      <div class="ampel-checkliste">
+        ${dailyBadge}
+        <div class="check-zeile check-nein">✗ Kein H4 TBS vorhanden</div>
+        <div class="check-zeile check-neutral">→ Warte auf Kerzen-Close außerhalb CRT-Range</div>
+      </div>
+    </div>
+  </div></div>`;
 }
 
 async function ladeAsset(asset){
   const container=document.getElementById('asset-'+asset.sym);
   if(!container)return{sym:asset.sym,signale:[]};
-  const ergebnisse=await Promise.all([{wert:'4h',label:'H4'},{wert:'1h',label:'H1'}].map(async tf=>{
-    try{
-      const[kr,tr]=await Promise.all([
-        fetch(B+'/klines?symbol='+asset.pair+'&interval='+tf.wert+'&limit=4'),
-        fetch(B+'/ticker/24hr?symbol='+asset.pair)
-      ]);
-      if(!kr.ok||!tr.ok)throw new Error('Fehler');
-      const[klines,ticker]=await Promise.all([kr.json(),tr.json()]);
-      const livePreis=parseFloat(ticker.lastPrice);
-      const veraend=parseFloat(ticker.priceChangePercent);
-      const crt=calcCRT(klines,livePreis);
-      const an=analyse(crt);
-      pruefeAlarm(asset,tf.wert,an,crt);
-      return{tf:tf.wert,label:tf.label,ok:true,crt,livePreis,veraend,analyse:an};
-    }catch(e){return{tf:tf.wert,label:tf.label,ok:false,fehler:e.message};}
-  }));
+
+  // Daily + H4 + H1 parallel laden
+  const[dailyRes, ...tfRes]=await Promise.all([
+    // Daily für Bias
+    fetch(B+'/klines?symbol='+asset.pair+'&interval=1d&limit=3')
+      .then(r=>r.ok?r.json():null).catch(()=>null),
+    // H4 und H1
+    ...[{wert:'4h',label:'H4'},{wert:'1h',label:'H1'}].map(async tf=>{
+      try{
+        const[kr,tr]=await Promise.all([
+          fetch(B+'/klines?symbol='+asset.pair+'&interval='+tf.wert+'&limit=4'),
+          fetch(B+'/ticker/24hr?symbol='+asset.pair)
+        ]);
+        if(!kr.ok||!tr.ok)throw new Error('Fehler');
+        const[klines,ticker]=await Promise.all([kr.json(),tr.json()]);
+        const livePreis=parseFloat(ticker.lastPrice);
+        const veraend=parseFloat(ticker.priceChangePercent);
+        // Signal Reset bei neuer Kerze
+        pruefeNeueKerze(asset.pair,tf.wert,klines);
+        const crt=calcCRT(klines,livePreis,asset.pair);
+        // Daily Bias für Analyse (wird gleich berechnet)
+        return{tf:tf.wert,label:tf.label,ok:true,klines,crt,livePreis,veraend};
+      }catch(e){return{tf:tf.wert,label:tf.label,ok:false,fehler:e.message};}
+    })
+  ]);
+
+  // Daily Bias berechnen
+  const livePreis=tfRes[0].ok?tfRes[0].livePreis:0;
+  const daily=dailyRes?calcDailyBias(dailyRes,livePreis):null;
+
+  // Analyse MIT Daily Bias
+  const ergebnisse=tfRes.map(r=>{
+    if(!r.ok)return r;
+    const an=analyse(r.crt,daily);
+    pruefeAlarm(asset,r.tf,an,r.crt,daily);
+    return{...r,analyse:an};
+  });
+
   const[r4,r1]=ergebnisse;
   const ri4=r4.ok?r4.analyse.richtung:'NEUTRAL';
   const ri1=r1.ok?r1.analyse.richtung:'NEUTRAL';
@@ -848,7 +898,7 @@ async function ladeAsset(asset){
   const crt4=r4.ok?r4.crt:null;
   const crt1=r1.ok?r1.crt:null;
   container.innerHTML=`<div class="dual-grid">
-    ${ampelBanner(ri4,ki4,crt4,ri1,ki1,crt1)}
+    ${ampelBanner(ri4,ki4,crt4,ri1,ki1,crt1,daily)}
     ${karteHtml(asset,'4h','H4',r4.ok?{laden:false,crt:r4.crt,livePreis:r4.livePreis,veraend:r4.veraend,analyse:r4.analyse}:{laden:false,fehler:r4.fehler})}
     ${karteHtml(asset,'1h','H1',r1.ok?{laden:false,crt:r1.crt,livePreis:r1.livePreis,veraend:r1.veraend,analyse:r1.analyse}:{laden:false,fehler:r1.fehler})}
   </div>`;
