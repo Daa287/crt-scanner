@@ -213,7 +213,7 @@ body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-heig
     <div class="live"><div class="dot"></div><span id="letzteAkt">–</span></div>
     <button class="btn" onclick="alleAkt()">↻ Aktualisieren</button>
     <button class="btn-alarm" id="alarmBtn" onclick="toggleAlarm()">🔔 Alarm: AUS</button>
-    <button class="btn-copy" onclick="kopiereФuerClaude()">📋 Für Claude</button>
+    <button class="btn-copy" onclick="kopiereFuerClaude()">📋 Für Claude</button>
   </div>
 </div>
 
@@ -945,7 +945,7 @@ async function ladeAsset(asset){
 }
 
 // ── DATEN FÜR CLAUDE KOPIEREN (v1.07) ────────────────────────────────────────
-function kopiereФuerClaude(){
+function kopiereFuerClaude(){
   const zeit=new Date().toLocaleString('de-DE');
   let text=`=== CRT·TBS Scanner v1.07 · ${zeit} ===\n\n`;
 
@@ -1007,6 +1007,8 @@ function kopiereФuerClaude(){
     alert('Daten kopiert! Jetzt in Claude einfügen.');
   });
 }
+
+async function alleAkt(){
   document.getElementById('letzteAkt').textContent=new Date().toLocaleTimeString('de-DE');
   ASSETS.forEach(asset=>{
     const c=document.getElementById('asset-'+asset.sym);
