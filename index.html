@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CRT · TBS · Scanner v1.07</title>
+<title>CRT · TBS · Scanner v1.08</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-height:100vh}
@@ -208,7 +208,7 @@ body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-heig
 
 <div class="header">
   <div class="logo">CRT · TBS · KI SCANNER</div>
-  <div class="version">VERSION 1.07 · BUG-FIXES · DATEN FÜR CLAUDE · OPTIMIERTE AMPEL</div>
+  <div class="version">VERSION 1.08 · ZIEL-BUG FIX · KORREKTE EINSTIEGSZONEN · R:R OPTIMIERT</div>
   <div class="controls">
     <div class="live"><div class="dot"></div><span id="letzteAkt">–</span></div>
     <button class="btn" onclick="alleAkt()">↻ Aktualisieren</button>
@@ -291,7 +291,7 @@ body{background:#06060f;color:#dde1f0;font-family:monospace;padding:8px;min-heig
   <div id="statsInhalt"></div>
 </div>
 
-<div class="footer">BINANCE API · v1.07 · AMPEL-FIX · KORREKTE TF-TEXTE · 📋 DATEN FÜR CLAUDE</div>
+<div class="footer">BINANCE API · v1.08 · ZIEL-BUG FIX · R:R ANZEIGE · KORREKTE EINSTIEGSZONEN</div>
 
 <script>
 const ASSETS=[
@@ -435,23 +435,33 @@ function analyse(crt,dailyBias,tf){
   if(tB&&!dailyGegen){
     ri='LONG';
     mo=pos<20?'#1 Orderblock':pos<40?'#2 FVG':'#3 BOS';
-    sl=+(L-R*0.12).toFixed(2);t1=+M.toFixed(2);t2=+H.toFixed(2);
-    ei=fmt(L)+' – '+fmt(M);
-    // v1.07 FIX: tfLabel statt immer "H4"
+    // LONG Einstiegszone: CRTL bis MID-25% der Range (unteres Drittel)
+    // So liegt Ziel1 (MID) klar ÜBER der Einstiegszone → echtes R:R
+    const longEinstiegOben=+(L+R*0.35).toFixed(2); // max 35% der Range
+    sl=+(L-R*0.12).toFixed(2);                      // Stop unter CRTL
+    t1=+M.toFixed(2);                               // Ziel 1: MID
+    t2=+H.toFixed(2);                               // Ziel 2: CRTH
+    ei=fmt(L)+' – '+fmt(longEinstiegOben);           // Einstieg: CRTL bis 35%
     bg=dailyAligned
       ?'✓ Daily LONG · '+tfLabel+' Bullish TBS · Short-Falle abgeschlossen · Long im Discount zwischen CRTL und MID.'
       :tfLabel+' Bullish TBS ohne Daily Bestätigung · Vorsicht – gegen Haupttrend möglich.';
     aw=pos>50?'Preis über MID → Rücksetzer zur CRTL abwarten.':'';
+
   }else if(tBe&&!dailyGegen){
     ri='SHORT';
     mo=pos>80?'#1 Orderblock':pos>60?'#2 FVG':'#3 BOS';
-    sl=+(H+R*0.12).toFixed(2);t1=+M.toFixed(2);t2=+L.toFixed(2);
-    ei=fmt(M)+' – '+fmt(H);
-    // v1.07 FIX: tfLabel statt immer "H4"
+    // SHORT Einstiegszone: CRTH bis MID+25% der Range (oberes Drittel)
+    // So liegt Ziel1 (MID) klar UNTER der Einstiegszone → echtes R:R
+    const shortEinstiegUnten=+(H-R*0.35).toFixed(2); // min 65% der Range
+    sl=+(H+R*0.12).toFixed(2);                        // Stop über CRTH
+    t1=+M.toFixed(2);                                 // Ziel 1: MID
+    t2=+L.toFixed(2);                                 // Ziel 2: CRTL
+    ei=fmt(shortEinstiegUnten)+' – '+fmt(H);          // Einstieg: 65% bis CRTH
     bg=dailyAligned
       ?'✓ Daily SHORT · '+tfLabel+' Bearish TBS · Long-Falle abgeschlossen · Short im Premium zwischen MID und CRTH.'
       :tfLabel+' Bearish TBS ohne Daily Bestätigung · Vorsicht – gegen Haupttrend möglich.';
     aw=pos<50?'Preis unter MID → Pullback zur CRTH abwarten.':'';
+
   }else if(dailyGegen&&tbs){
     ri='NEUTRAL';
     bg='⚠️ '+tfLabel+' TBS gegen Daily Bias – sehr hohes Risiko. NICHT traden.';
@@ -718,6 +728,21 @@ function karteHtml(asset,tf,tfLabel,s){
         <div class="zelle"><div class="zelle-bez">Ziel 2</div><div class="zelle-val" style="color:#00e676">${fmt(ki.ziel2)}</div></div>
       </div>
       <div class="einstieg-zelle"><div class="zelle-bez">EINSTIEG</div><div class="zelle-val" style="color:#dde1f0;font-size:8px">${ki.einstieg}</div></div>
+      ${(()=>{
+        // R:R Berechnung anzeigen
+        if(ki.richtung==='NEUTRAL'||!ki.stopp)return'';
+        const einstiegMid=ki.richtung==='LONG'
+          ?parseFloat(fmt(c.CRTL).replace('$','').replace('.','').replace(',','.'))
+          :parseFloat(fmt(c.CRTH).replace('$','').replace('.','').replace(',','.'));
+        const risk=Math.abs(p-ki.stopp);
+        const reward=Math.abs(ki.ziel1-p);
+        const rr=risk>0?(reward/risk).toFixed(1):'–';
+        const rrF=parseFloat(rr)>=1.5?'#00e676':parseFloat(rr)>=1?'#ffab00':'#ff1744';
+        return`<div style="display:flex;justify-content:space-between;padding:4px 6px;background:#06060f;border:1px solid #1c1c38;margin-bottom:4px">
+          <span style="font-size:7px;color:#445060;letter-spacing:2px">R:R VERHÄLTNIS</span>
+          <span style="font-size:11px;font-weight:bold;color:${rrF}">1 : ${rr}</span>
+        </div>`;
+      })()}
       <div class="begruendung">${ki.begruendung}</div>
       ${awH}${journalBtn}
     </div>
